@@ -1,5 +1,6 @@
 import os
 from threading import Lock
+import time
 import warnings
 
 from .mmap_dict import mmap_key, MmapedDict
@@ -12,16 +13,23 @@ class MutexValue:
 
     def __init__(self, typ, metric_name, name, labelnames, labelvalues, help_text, **kwargs):
         self._value = 0.0
+        self._timestamp_sec = 0.0
         self._exemplar = None
         self._lock = Lock()
 
-    def inc(self, amount):
+    def inc(self, amount, timestamp_sec=None):
+        if not timestamp_sec:
+            timestamp_sec = time.time()
         with self._lock:
             self._value += amount
+            self._timestamp_sec = timestamp_sec
 
-    def set(self, value):
+    def set(self, value, timestamp_sec=None):
+        if not timestamp_sec:
+            timestamp_sec = time.time()
         with self._lock:
             self._value = value
+            self._timestamp_sec = timestamp_sec
 
     def set_exemplar(self, exemplar):
         with self._lock:
@@ -82,7 +90,7 @@ def MultiProcessValue(process_identifier=os.getpid):
                 files[file_prefix] = MmapedDict(filename)
             self._file = files[file_prefix]
             self._key = mmap_key(metric_name, name, labelnames, labelvalues, help_text)
-            self._value = self._file.read_value(self._key)
+            self._value, self._timestamp_sec = self._file.read_value(self._key)
 
         def __check_for_pid_change(self):
             actual_pid = process_identifier()
@@ -95,17 +103,25 @@ def MultiProcessValue(process_identifier=os.getpid):
                 for value in values:
                     value.__reset()
 
-        def inc(self, amount):
+        def inc(self, amount, timestamp_sec=None):
+            if not timestamp_sec:
+                timestamp_sec = time.time()
+
             with lock:
                 self.__check_for_pid_change()
                 self._value += amount
-                self._file.write_value(self._key, self._value)
+                self._timestamp_sec = timestamp_sec
+                self._file.write_value(self._key, self._value, self._timestamp_sec)
 
-        def set(self, value):
+        def set(self, value, timestamp_sec=None):
+            if not timestamp_sec:
+                timestamp_sec = time.time()
+
             with lock:
                 self.__check_for_pid_change()
                 self._value = value
-                self._file.write_value(self._key, self._value)
+                self._timestamp_sec = timestamp_sec
+                self._file.write_value(self._key, self._value, self._timestamp_sec)
 
         def set_exemplar(self, exemplar):
             # TODO: Implement exemplars for multiprocess mode.

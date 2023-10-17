@@ -68,7 +68,7 @@ class MultiProcessCollector:
                     # the file is missing
                     continue
                 raise
-            for key, value, _ in file_values:
+            for key, value, timestamp_sec, _ in file_values:
                 metric_name, name, labels, labels_key, help_text = _parse_key(key)
 
                 metric = metrics.get(metric_name)
@@ -79,7 +79,7 @@ class MultiProcessCollector:
                 if typ == 'gauge':
                     pid = parts[2][:-3]
                     metric._multiprocess_mode = parts[1]
-                    metric.add_sample(name, labels_key + (('pid', pid),), value)
+                    metric.add_sample(name, labels_key + (('pid', pid),), value, timestamp_sec)
                 else:
                     # The duplicates and labels are fixed in the next for.
                     metric.add_sample(name, labels_key, value)
@@ -89,6 +89,7 @@ class MultiProcessCollector:
     def _accumulate_metrics(metrics, accumulate):
         for metric in metrics.values():
             samples = defaultdict(float)
+            sample_timestamp_secs = defaultdict(float)
             buckets = defaultdict(lambda: defaultdict(float))
             samples_setdefault = samples.setdefault
             for s in metric.samples:
@@ -105,6 +106,12 @@ class MultiProcessCollector:
                             samples[without_pid_key] = value
                     elif metric._multiprocess_mode in ('sum', 'livesum'):
                         samples[without_pid_key] += value
+                    elif metric._multiprocess_mode in ('mostrecent', 'livemostrecent'):
+                        current_ts_sec = sample_timestamp_secs[without_pid_key]
+                        ts_sec = float(timestamp or 0)
+                        if current_ts_sec < ts_sec:
+                            samples[without_pid_key] = value
+                            sample_timestamp_secs[without_pid_key] = ts_sec
                     else:  # all/liveall
                         samples[(name, labels)] = value
 
@@ -143,7 +150,7 @@ class MultiProcessCollector:
                         samples[(metric.name + '_count', labels)] = acc
 
             # Convert to correct sample format.
-            metric.samples = [Sample(name_, dict(labels), value) for (name_, labels), value in samples.items()]
+            metric.samples = [Sample(name_, dict(labels), value, sample_timestamp_secs.get((name_, labels), None)) for (name_, labels), value in samples.items()]
         return metrics.values()
 
     def collect(self):

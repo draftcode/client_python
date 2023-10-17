@@ -346,7 +346,7 @@ class Gauge(MetricWrapperBase):
         d.set_function(lambda: len(my_dict))
     """
     _type = 'gauge'
-    _MULTIPROC_MODES = frozenset(('all', 'liveall', 'min', 'livemin', 'max', 'livemax', 'sum', 'livesum'))
+    _MULTIPROC_MODES = frozenset(('all', 'liveall', 'min', 'livemin', 'max', 'livemax', 'sum', 'livesum', 'mostrecent', 'livemostrecent'))
 
     def __init__(self,
                  name: str,
@@ -357,7 +357,7 @@ class Gauge(MetricWrapperBase):
                  unit: str = '',
                  registry: Optional[CollectorRegistry] = REGISTRY,
                  _labelvalues: Optional[Sequence[str]] = None,
-                 multiprocess_mode: Literal['all', 'liveall', 'min', 'livemin', 'max', 'livemax', 'sum', 'livesum'] = 'all',
+                 multiprocess_mode: Literal['all', 'liveall', 'min', 'livemin', 'max', 'livemax', 'sum', 'livesum', 'mostrecent', 'livemostrecent'] = 'all',
                  ):
         self._multiprocess_mode = multiprocess_mode
         if multiprocess_mode not in self._MULTIPROC_MODES:
@@ -390,10 +390,15 @@ class Gauge(MetricWrapperBase):
         self._raise_if_not_observable()
         self._value.inc(-amount)
 
-    def set(self, value: float) -> None:
-        """Set gauge to the given value."""
+    def set(self, value: float, timestamp_sec: Optional[float] = None) -> None:
+        """Set gauge to the given value.
+
+        This can take an optional timestamp to indicate when the sample was
+        taken. This is used for the most_recent aggregation and Prometheus
+        exposition.
+        """
         self._raise_if_not_observable()
-        self._value.set(float(value))
+        self._value.set(float(value), timestamp_sec=timestamp_sec)
 
     def set_to_current_time(self) -> None:
         """Set gauge to the current unixtime."""
